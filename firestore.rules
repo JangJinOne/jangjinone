@@ -1,0 +1,25 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 참가자 신청
+    match /entries/{id} {
+      allow read, delete: if true;
+      allow create: if request.resource.data.name is string
+                    && request.resource.data.name.size() <= 20
+                    && request.resource.data.gender in ['M', 'F'];
+      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['shown']);
+    }
+    // 공개/처리 기록
+    match /shows/{id} {
+      allow read, write: if true;
+    }
+    // 지금 화면에 띄운 매칭
+    match /stage/{id} {
+      allow read, write: if id == 'current';
+    }
+    // 그 밖의 경로는 모두 막기
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
