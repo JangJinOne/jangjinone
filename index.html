@@ -85,6 +85,8 @@ a{color:inherit}
 .inp{width:100%;height:52px;border:1px solid var(--line-strong);border-radius:10px;background:var(--bg);color:var(--fg);font:500 17px var(--font);padding:0 14px}
 .inp::placeholder{color:var(--faint)}
 .inp:focus{outline:none;border-color:var(--fg)}
+.inp.ta{height:auto;min-height:120px;padding:14px;line-height:1.5;resize:none;font-size:18px}
+.sr{position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .err{color:var(--danger);font-size:14px;font-weight:500;min-height:20px;margin-top:10px}
 
 /* 잠금 */
@@ -397,14 +399,18 @@ function showWelcome(){
 // ===== 질문 =====
 const QS=[
   {k:"face",  q:"얼굴상", me:"내 얼굴상은?",   want:"이상형의 얼굴상은?", o:["강아지상","고양이상","여우상","토끼상","곰상","공룡상"]},
-  {k:"mood",  q:"성격",   me:"내 성격은?",     want:"이상형의 성격은?",   o:["활발한","차분한","다정한","웃긴","츤데레","4차원"]},
+  {k:"mood",  q:"성격",   me:"내 성격을 적어 주세요", want:"이상형의 성격을 적어 주세요", text:true, o:[], ph:"예: 활발하고 잘 웃어요, 다정한 편이에요"},
   {k:"height",q:"키",     me:"내 키는?",       want:"이상형의 키는?",     o:["작은 편","중간","큰 편"]},
   {k:"grade", q:"학년",   me:"몇 학년인가요?", want:"이상형은 몇 학년인가요?", multi:true, o:["1학년","2학년","3학년"]},
 ];
 const ANY=-1;
-function dir(a,b){let s=0;for(const q of QS){const w=a.want?.[q.k],v=b.me?.[q.k];if(w===ANY)s+=0.6;else if(Array.isArray(w)?w.includes(v):(w!=null&&w===v))s+=1;}return s/QS.length;}
+const SUF=["스러운","스럽고","이에요","적인","해요","하고","하는","하며","하게","예요","이고","에요","한","해","요","고","은","는","이","가","을","를","인","함","임"];
+const STOP=new Set(["사람","성격","저는","나는","제가","내가","좋아","좋은","좋겠","정말","진짜","그냥","조금","약간","많이","너무","같은","같아","있는","있어","없는","편이"]);
+const stems=t=>String(t||"").toLowerCase().split(/[^0-9a-z가-힣]+/).map(w=>{for(const x of SUF){if(w.length>x.length+1&&w.endsWith(x))return w.slice(0,-x.length);}return w;}).filter(w=>w.length>=2&&!STOP.has(w));
+function textSim(want,me){const W=[...new Set(stems(want))],M=stems(me);if(!W.length||!M.length)return 0;let hit=0;for(const w of W){if(M.some(m=>m===w||m.startsWith(w)||w.startsWith(m)||(w.length>=2&&m.length>=2&&w.slice(0,2)===m.slice(0,2))))hit++;}return hit/W.length;}
+function dir(a,b){let s=0;for(const q of QS){const w=a.want?.[q.k],v=b.me?.[q.k];if(w===ANY)s+=0.6;else if(q.text)s+=textSim(w,v);else if(Array.isArray(w)?w.includes(v):(w!=null&&w===v))s+=1;}return s/QS.length;}
 const scoreOf=(a,b)=>Math.round((dir(a,b)+dir(b,a))/2*100);
-const valText=(q,v)=>v===ANY?"상관없음":v==null?"-":Array.isArray(v)?v.map(i=>q.o[i]).join("/"):q.o[v];
+const valText=(q,v)=>v===ANY?"상관없음":v==null?"-":q.text?(typeof v==="string"?v:"-"):Array.isArray(v)?v.map(i=>q.o[i]).join("/"):q.o[v];
 
 // ===== 공통 상태 =====
 let db=null,mode="",entries=[],shows=[],stage=null,booted=false;
@@ -470,7 +476,10 @@ function renderPlay(){
   }else{
     const q=S.q,v=form[S.side][q.k],multi=S.side==="want"&&!!q.multi;
     const on=i=>multi?Array.isArray(v)&&v.includes(i):v===i;
-    body=`<div class="qh"><h1>${esc(S.side==="me"?q.me:q.want)}</h1>${multi?`<p>여러 개를 골라도 돼요.</p>`:""}</div>
+    if(q.text)body=`<div class="qh"><h1>${esc(S.side==="me"?q.me:q.want)}</h1><p>짧게 몇 단어로 적어도 돼요.</p></div>
+      <label class="field"><span class="sr">${esc(q.q)}</span><textarea class="inp ta" id="tx" maxlength="80" rows="3" placeholder="${esc(q.ph)}">${typeof v==="string"?esc(v):""}</textarea></label>
+      ${S.side==="want"?`<div class="opts" style="margin-top:12px">${optBtn("상관없어요",v===ANY,`data-v="${ANY}"`,"any")}</div>`:""}`;
+    else body=`<div class="qh"><h1>${esc(S.side==="me"?q.me:q.want)}</h1>${multi?`<p>여러 개를 골라도 돼요.</p>`:""}</div>
       <div class="opts ${q.o.length===3?"c3":""}">${q.o.map((o,i)=>optBtn(o,on(i),`data-v="${i}"`,multi?"multi":"")).join("")}${S.side==="want"?optBtn("상관없어요",v===ANY,`data-v="${ANY}"`,"any"):""}</div>`;
   }
   const left=step===0?`<a href="#" class="ibtn" aria-label="홈으로">${I("home")}</a>`:`<button class="ibtn" id="back" aria-label="이전">${I("back")}</button>`;
@@ -480,7 +489,10 @@ function renderPlay(){
   const nm=$("#nm");if(nm){nm.oninput=()=>form.name=nm.value;if(!form.name)nm.focus();}
   const sid=$("#sid");if(sid)sid.oninput=()=>form.sid=sid.value;
   $("#app").querySelectorAll("[data-g]").forEach(b=>b.onclick=()=>{form.gender=b.dataset.g;$("#app").querySelectorAll("[data-g]").forEach(x=>x.classList.toggle("on",x===b));$("#err").textContent="";});
-  if(S.t==="q"){
+  const tx=$("#tx");
+  if(tx){tx.oninput=()=>{form[S.side][S.q.k]=tx.value.trim()?tx.value:null;const a=$("#app").querySelector(".opt.any");if(a&&tx.value.trim())a.classList.remove("on");$("#err").textContent="";};if(!tx.value)tx.focus();}
+  if(S.t==="q"&&S.q.text){$("#app").querySelectorAll("[data-v]").forEach(b=>b.onclick=()=>{const on=!b.classList.contains("on");b.classList.toggle("on",on);form.want[S.q.k]=on?ANY:(tx.value.trim()?tx.value:null);if(on)tx.value="";$("#err").textContent="";});}
+  else if(S.t==="q"){
     const q=S.q,multi=S.side==="want"&&!!q.multi;
     $("#app").querySelectorAll("[data-v]").forEach(b=>b.onclick=()=>{
       const v=+b.dataset.v;
@@ -509,7 +521,8 @@ async function nextStep(){
     if(!/^\d{3,8}$/.test(form.sid))return err.textContent="학번은 숫자로만 입력해 주세요.";
     if(entries.some(e=>e.sid===form.sid))return err.textContent="이미 신청한 학번이에요.";
     if(!form.gender)return err.textContent="성별을 선택해 주세요.";
-  }else if(form[S.side][S.q.k]==null)return err.textContent="하나 이상 선택해 주세요.";
+  }else if(form[S.side][S.q.k]==null)return err.textContent=S.q.text?(S.side==="want"?"이상형 성격을 적거나 '상관없어요'를 눌러 주세요.":"내 성격을 적어 주세요."):"하나 이상 선택해 주세요.";
+  if(S.t==="q"&&S.q.text&&typeof form[S.side][S.q.k]==="string")form[S.side][S.q.k]=form[S.side][S.q.k].trim();
   if(step<STEPS.length-1){step++;renderPlay();toTop();return;}
   if(!db)return err.textContent="저장소에 연결되지 않았어요. 새로고침해 주세요.";
   const btn=$("#next");btn.disabled=true;btn.textContent="신청하는 중";
